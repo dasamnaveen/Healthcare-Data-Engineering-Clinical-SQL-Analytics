@@ -34,6 +34,8 @@ CREATE TABLE appointments (
     CONSTRAINT chk_fee CHECK (consultation_fee > 0)
 );
 SELECT * FROM appointments;
+
+
 -- 4. Create Lab Results Table
 -- Focus: High-precision medical data validation
 CREATE TABLE lab_results (
@@ -49,82 +51,324 @@ CREATE TABLE lab_results (
     CONSTRAINT chk_test_value CHECK (test_value >= 0)
 );
 
-/* 1. The Business Problem: The hospital administration wants to evaluate the overall 
-	clinical performance of the Nephrology department and track patient volume. */
+# Applying Joins 
+
+-- Inner Join
+# For Patients table and appointments table
 SELECT 
-    a.doctor_name,
-    COUNT(a.app_id) AS total_patients_seen,
-    ROUND(AVG(l.test_value), 2) AS average_urr_score,
-    MAX(l.test_value) AS highest_urr_recorded
-FROM appointments a
-JOIN lab_results l ON a.app_id = l.app_id
-WHERE a.department = 'Nephrology' AND l.test_name = 'URR'
-GROUP BY a.doctor_name
-HAVING COUNT(a.app_id) > 10;
+    *
+FROM
+    patients AS p
+        INNER JOIN
+    appointments AS a ON p.patient_id = a.patient_id;
 
-/* 2. The Business Problem: The hospital needs to identify the busiest months of the year for scheduling additional staff, 
-	and they want to calculate the exact current age of patients rather than relying on the static age column. */
-
+# For appointments table and lab_results table
 SELECT 
-    EXTRACT(MONTH FROM appointment_date) AS month_of_year,
-    COUNT(app_id) AS total_monthly_appointments,
-    SUM(consultation_fee) AS monthly_revenue
-FROM appointments
-WHERE status = 'Completed'
-GROUP BY EXTRACT(MONTH FROM appointment_date)
-ORDER BY total_monthly_appointments DESC;
-
-/* 3. The Business Problem: A doctor needs a comprehensive "Patient Report Card" that pulls the patient's contact info, 
-	their appointment status, and their latest lab results into one single, readable view. */
-SELECT 
-    p.patient_id,
-    p.name AS patient_name,
-    p.phone,
-    a.department,
-    a.appointment_date,
-    l.test_name,
-    l.test_value,
-    l.unit
-FROM patients p
-INNER JOIN appointments a ON p.patient_id = a.patient_id
-LEFT JOIN lab_results l ON a.app_id = l.app_id
-WHERE a.status = 'Completed' AND a.appointment_date >= '2025-01-01'
-ORDER BY a.appointment_date DESC;
-
-/* 4. The Situation: The Hospital Director is reviewing the Nephrology department's performance for the year 2025. 
-	They are concerned about both the financial revenue and the clinical quality of the dialysis treatments being provided by the staff doctors.
-	They need a summary report that flags which doctors might need a performance review based on their patients Urea Reduction Ratio (URR) scores, 
-	alongside their monthly patient volume. */
+    *
+FROM
+    appointments AS a
+        INNER JOIN
+    lab_results AS l ON a.app_id = l.app_id;
     
--- LAYER 4: The Math (What we want to see in the final report)
+-- Left Join
 SELECT 
-    a.doctor_name, # a is the shorthand nickname for appointment
-    EXTRACT(MONTH FROM a.appointment_date) AS appointment_month,
-    COUNT(a.app_id) AS total_appointments,
-    SUM(a.consultation_fee) AS total_revenue,
-    ROUND(AVG(l.test_value), 2) AS average_urr_score
+    *
+FROM
+    appointments AS a
+        LEFT JOIN
+    lab_results AS l ON a.app_id = l.app_id;
+    
+-- Right Join
+SELECT 
+    *
+FROM
+    appointments AS a
+        RIGHT JOIN
+    lab_results AS l ON a.app_id = l.app_id;
+    
+-- Outer Join / Full Outer Join
+SELECT 
+    *
+FROM
+    appointments AS a
+        LEFT JOIN
+    lab_results AS l ON a.app_id = l.app_id
+UNION
+SELECT 
+    *
+FROM
+    appointments AS a
+        RIGHT JOIN
+    lab_results AS l ON a.app_id = l.app_id;
+    
+-- Left Exclusive Join
+SELECT 
+    *
+FROM
+    appointments AS a
+        LEFT JOIN
+    lab_results AS l ON a.app_id = l.app_id
+    WHERE l.result_id IS Null;
+    
+-- Right Exclusive Join
+SELECT 
+    *
+FROM
+    appointments AS a
+        RIGHT JOIN
+    lab_results AS l ON a.app_id = l.app_id
+    WHERE a.status = 'completed';
 
--- LAYER 1: The Foundation (Connecting the required tables)
-FROM appointments a
-JOIN lab_results l ON a.app_id = l.app_id
+-- Exclusive Outer Join    
+SELECT 
+    *
+FROM
+    appointments AS a
+        LEFT JOIN
+    lab_results AS l ON a.app_id = l.app_id
+    WHERE l.result_id IS Null
+UNION
+SELECT 
+    *
+FROM
+    appointments AS a
+        RIGHT JOIN
+    lab_results AS l ON a.app_id = l.app_id
+    WHERE a.status = 'completed';
+    
+-- Natural Join
+SELECT 
+    *
+FROM
+    patients
+        NATURAL JOIN
+    appointments;
+    
+-- Cross Join /  Cartesian Join
+SELECT 
+    *
+FROM
+    appointments
+        CROSS JOIN
+    lab_results;
+    
+-- Self Join
+SELECT 
+    a1.patient_id,
+    a1.app_id AS first_appointment_id,
+    a1.appointment_date AS first_visit_date,
+    a2.app_id AS follow_up_appointment_id,
+    a2.appointment_date AS follow_up_date,
+    a1.department
+FROM appointments a1
+JOIN appointments a2 
+    ON a1.patient_id = a2.patient_id -- Match records belonging to the same patient
+WHERE a1.app_id <> a2.app_id         -- CRITICAL: Prevent the row from matching with itself
+  AND a1.appointment_date < a2.appointment_date; -- Prevents showing duplicates like (Visit 1, Visit 2) AND (Visit 2, Visit 1)
+    
+-- Sub Queries
+-- Find patients who are older than the hospital's average patient age.
+SELECT 
+    name, age, city
+FROM
+    patients
+WHERE
+    age > (SELECT 
+            AVG(age)
+        FROM
+            patients); -- Here, the average age is 45.0848
+            
+-- Find all appointments for patients who live in 'Hyderabad'.
+SELECT
+	app_id, doctor_name, appointment_date
+FROM 
+	appointments
+WHERE 
+	patient_id IN (SELECT 
+		patient_id
+	FROM 
+		patients
+	WHERE 
+		city = 'Hyderabad');
+        
+-- Identify the details of the most expensive consultation ever charged.
+SELECT 
+    app_id, patient_id, department, consultation_fee
+FROM
+    appointments
+WHERE
+    consultation_fee = (SELECT 
+            MAX(consultation_fee)
+        FROM
+            appointments);
+            
+-- Find patients who have NEVER booked an appointment.
+SELECT
+	patient_id, name, phone
+FROM 
+	patients
+WHERE
+	patient_id NOT IN (SELECT
+		patient_id 
+	FROM
+		appointments);
+        
+-- Show each patient's name alongside the total count of appointments they've had.
+SELECT
+	name,
+	(SELECT 
+		COUNT(*)
+	FROM
+		appointments a
+	WHERE
+		a.patient_id = p.patient_id) AS 'Total Visits'
+FROM patients p;	
 
--- LAYER 2: The Pre-Filters (Removing irrelevant data before calculating)
-WHERE a.department = 'Nephrology'
-  AND a.status = 'Completed'
-  AND EXTRACT(YEAR FROM a.appointment_date) = 2025
-  AND l.test_name = 'URR'
+-- Correlated Subqueries & Basic Derived Tables
+-- Find appointments where the fee is higher than the average fee for THAT specific department.
+SELECT 
+    app_id, department, consultation_fee
+FROM
+    appointments a1
+WHERE
+    consultation_fee > (SELECT 
+            AVG(consultation_fee)
+        FROM
+            appointments a2
+        WHERE
+            a1.department = a2.department);
+            
+-- Create a demographic breakdown using a Derived Table.
+SELECT 
+    age_category, COUNT(*) AS total_patients
+FROM
+    (SELECT 
+        CASE
+                WHEN age < 18 THEN 'Pediatric (<18)'
+                WHEN age BETWEEN 18 AND 60 THEN 'Adult (18-60)'
+		ELSE 'Senior (>60)'
+        END AS age_category
+    FROM
+        patients) AS patient_demographics
+GROUP BY age_category;
 
--- LAYER 3: The Grouping (Organizing the calculations by Doctor and Month)
-GROUP BY 
-    a.doctor_name,
-    EXTRACT(MONTH FROM a.appointment_date)
+-- Find patients who have had a lab test recorded.
+SELECT 
+    p.name, p.phone
+FROM
+    patients p
+WHERE
+    EXISTS( SELECT 
+            1
+        FROM
+            appointments a
+                JOIN
+            lab_results l ON a.app_id = l.app_id
+        WHERE
+            a.patient_id = p.patient_id);
+            
+-- Find doctors whose total revenue exceeds ₹10,000 using a Derived Table.
+SELECT 
+    doctor_name, total_revenue
+FROM
+    (SELECT 
+        doctor_name, SUM(consultation_fee) AS total_revenue
+    FROM
+        appointments
+    WHERE
+        status = 'Completed'
+    GROUP BY doctor_name) AS doctor_financials
+WHERE
+    total_revenue > 10000;
+    
+-- Find appointments that cost more than ALL appointments in the Pediatrics department.	
+SELECT 
+    app_id, doctor_name, department, consultation_fee
+FROM
+    appointments
+WHERE
+    consultation_fee > ALL (SELECT 
+            consultation_fee
+        FROM
+            appointments
+        WHERE
+            department = 'Pediatrics');
+            
+-- Complex Derived Tables & Multi-Level Nesting
+-- Find the exact details of each patient's MOST RECENT appointment using a derived table.
+SELECT 
+    a.patient_id,
+    p.name,
+    a.appointment_date,
+    a.department,
+    a.doctor_name
+FROM
+    appointments a
+        JOIN
+    patients p ON a.patient_id = p.patient_id
+        JOIN
+    (SELECT 
+        patient_id, MAX(appointment_date) AS latest_date
+    FROM
+        appointments
+    GROUP BY patient_id) AS latest_visits ON a.patient_id = latest_visits.patient_id
+        AND a.appointment_date = latest_visits.latest_date;
+        
+-- Find departments whose average consultation fee is higher than the hospital's overall average fee.
+SELECT 
+    department, AVG(consultation_fee) AS dept_avg_fee
+FROM
+    appointments
+GROUP BY department
+HAVING AVG(consultation_fee) > (SELECT 
+        AVG(consultation_fee)
+    FROM
+        appointments);
+        
+-- Find Cardiology patients who never got their Blood Pressure checked.
+SELECT 
+    p.name, a.app_id, a.appointment_date
+FROM
+    patients p
+        JOIN
+    appointments a ON p.patient_id = a.patient_id
+WHERE
+    a.department = 'Cardiology'
+        AND NOT EXISTS( SELECT 
+            1
+        FROM
+            lab_results l
+        WHERE
+            l.app_id = a.app_id
+                AND l.test_name = 'Systolic BP');
+                
+-- Identify the "Top Performing Doctor" in Nephrology based on the highest average URR score.
+SELECT 
+    doctor_name, avg_urr
+FROM
+    (SELECT 
+        a.doctor_name, AVG(l.test_value) AS avg_urr
+    FROM
+        appointments a
+    JOIN lab_results l ON a.app_id = l.app_id
+    WHERE
+        a.department = 'Nephrology'
+            AND l.test_name = 'URR'
+    GROUP BY a.doctor_name) AS doctor_scores
+ORDER BY avg_urr DESC
+LIMIT 1;
 
--- LAYER 5: The Post-Filters (Filtering the grouped results based on Director's rules)
-HAVING 
-    AVG(l.test_value) < 65 
-    OR SUM(a.consultation_fee) > 5000
-
--- Sorting the final output chronologically, then by worst clinical score first
-ORDER BY 
-    appointment_month ASC,
-    average_urr_score ASC;
+-- Find lab tests where the value was higher than the average for that specific test type.
+SELECT 
+    a.patient_id, l.test_name, l.test_value, l.unit
+FROM
+    lab_results l
+        JOIN
+    appointments a ON l.app_id = a.app_id
+WHERE
+    l.test_value > (SELECT 
+            AVG(test_value)
+        FROM
+            lab_results l2
+        WHERE
+            l.test_name = l2.test_name);
